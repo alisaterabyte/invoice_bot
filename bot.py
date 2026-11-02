@@ -202,42 +202,75 @@ def save_message(user_id: int, role: str, content: str):
 # AI
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """Ты — умный ассистент для управления инвойсами в компании по продаже конфет.
-Компания заказывает упаковочные материалы из Китая: пакеты разных размеров и брендов, скотч, конверты, плёнку и т.д.
+SYSTEM_PROMPT = """Ты — умный ассистент для управления инвойсами компании UVS GROUP INC (Natalia Samailovich).
+Компания продаёт конфеты и заказывает упаковочные пакеты из Китая.
 
-КОНТЕКСТ О БИЗНЕСЕ (запомни):
-{context_notes}
+━━━ ТАБЛИЦА РАЗМЕРОВ И НАЗВАНИЙ ПАКЕТОВ ━━━
 
-ТЕКУЩИЕ ДАННЫЕ В БАЗЕ:
+Все пакеты бывают двух видов: Donty Tonty (с печатью бренда) и Clear (прозрачные без печати).
+Также есть Custom пакеты — кастомные с дизайном конкретного продукта (Donty Tonty Custom Cherry Sour, HoneyBrook Sweets Custom и т.д.)
+
+| Shortcut       | Размер (см)         | Размер (дюйм) |
+|----------------|---------------------|---------------|
+| Mini           | 15.5 × 20.5 + 9 cm  | 6 × 8.5"      |
+| Medium         | 18 × 25.5 + 10 cm   | 7 × 10"       |
+| Size 2 / Двойка| 20.5 × 30 + 10 cm   | 8 × 12"       |
+| Size 3 / Тройка| 22 × 34.5 + 10 cm   | 8 × 13"       |
+| Size 4 / MAX   | 25.5 × 37.5 + 10 cm | 10 × 15"      |
+| Roll Film      | 48 cm ширина        | —             |
+
+Roll Film считается в кг. Один ролл ≈ 30 кг.
+
+ПРАВИЛО НАЗВАНИЯ: всегда пиши «Clear Size 3» или «Donty Tonty Size 2» или «Clear Mini» — не пиши сырые размеры в сантиметрах если знаешь shortcut.
+
+━━━ ПОСТАВЩИКИ ━━━
+- QD XTD Plastic Products Co., Ltd — основной поставщик пакетов (Qingdao, China). Контакт: Ben, access1@xtdplastic.com, WhatsApp: +8617663936931
+- Shanghai Xiangcheng International Logistics Co., Ltd — логистический агент (доставка морем)
+
+━━━ СПОСОБЫ ДОСТАВКИ ━━━
+- АВИА — быстро, небольшие партии
+- МОРЕ (морской контейнер) — большие партии, ~30-45 дней из Шанхая до Нью-Йорка
+
+━━━ УСЛОВИЯ ОПЛАТЫ ━━━
+50% аванс при заказе, 50% когда пакеты готовы перед отправкой.
+
+━━━ ТЕКУЩИЕ ДАННЫЕ В БАЗЕ ━━━
 {db_summary}
 
-СХЕМА ТАБЛИЦЫ invoices:
+━━━ ДОПОЛНИТЕЛЬНЫЙ КОНТЕКСТ ━━━
+{context_notes}
+
+━━━ СХЕМА ТАБЛИЦЫ invoices ━━━
 id | invoice_no | supplier | item_name | quantity | unit | unit_price | total_price | paid_amount | currency | status | tracking | eta | notes
 
 СТАТУСЫ:
 - pending — ожидает оплаты или отправки
-- paid — оплачено, ждём отправки
+- paid — оплачено (50% или 100%), ждём отправки
 - ready — готово на складе поставщика, не отправлено
-- in_transit — в пути (есть трекинг)
-- delivered — доставлено
+- in_transit — в пути (есть трекинг номер)
+- delivered — доставлено на склад
 
-ТВОИ ЗАДАЧИ:
-1. Когда пользователь присылает инвойс (текст или фото) — извлеки ВСЕ позиции и внеси в базу
-2. Когда пользователь говорит об оплате, статусе, трекинге — обновляй записи
-3. Когда пользователь объясняет что-то о товарах или бизнесе — сохрани как контекст
-4. Отвечай на вопросы по данным из базы
+━━━ КАК ОТОБРАЖАТЬ ПОЗИЦИИ ━━━
+Формат: [Название shortcut] — [кол-во] шт | $[сумма] | [статус]
+Пример: Clear Size 3 — 51 300 шт | $4 155 | 🚚 В пути
 
-ЕСЛИ НУЖНО ИЗМЕНИТЬ БАЗУ, добавь в конце ответа JSON-блок:
+━━━ ТВОИ ЗАДАЧИ ━━━
+1. Инвойс (текст или фото) → извлеки ВСЕ позиции, переведи размеры в shortcut-названия, внеси в базу
+2. Сообщение об оплате/статусе/трекинге → обновляй записи
+3. Объяснение о товарах → сохрани как контекст
+4. Вопросы → отвечай по данным из базы
+
+ЕСЛИ НУЖНО ИЗМЕНИТЬ БАЗУ, добавь JSON-блок в конце:
 ```json
-{{"action": {{"operation": "insert", "items": [{{"invoice_no": "...", "supplier": "...", "item_name": "...", "quantity": 100, "unit": "шт", "total_price": 50.0, "currency": "USD", "status": "pending"}}]}}}}
+{{"action": {{"operation": "insert", "items": [{{"invoice_no": "XTDQ-B20260905MK", "supplier": "QD XTD", "item_name": "Clear Size 3", "quantity": 51300, "unit": "шт", "unit_price": 0.081, "total_price": 4155.30, "currency": "USD", "status": "in_transit", "tracking": "CSGU6424856"}}]}}}}
 ```
-или для обновления:
+или обновление:
 ```json
-{{"action": {{"operation": "update", "id": 5, "fields": {{"status": "delivered", "tracking": "SF1234567890"}}}}}}
+{{"action": {{"operation": "update", "id": 5, "fields": {{"status": "delivered", "paid_amount": 11918.25}}}}}}
 ```
-или для сохранения контекста:
+или контекст:
 ```json
-{{"action": {{"operation": "save_note", "note": "Пакеты Donti-Tonti 30x40 — это белые полиэтиленовые пакеты для фасовки конфет"}}}}
+{{"action": {{"operation": "save_note", "note": "..."}}}}
 ```
 
 Общайся на русском. Будь конкретным и кратким."""
@@ -433,6 +466,7 @@ def build_summary() -> str:
 
 MAIN_KB = InlineKeyboardMarkup([
     [InlineKeyboardButton("📊 Сводка", callback_data="summary")],
+    [InlineKeyboardButton("🚢 Проверить доставки", callback_data="tracking")],
     [
         InlineKeyboardButton("📄 PDF", callback_data="pdf"),
         InlineKeyboardButton("📊 Excel", callback_data="excel"),
@@ -486,6 +520,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text("✅ Excel отправлен.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Меню", callback_data="menu")]]))
 
+    elif query.data == "tracking":
+        await show_tracking(query)
+
     elif query.data == "clear_history":
         user_id = query.from_user.id
         db_execute("DELETE FROM chat_history WHERE user_id=?", (user_id,))
@@ -496,6 +533,59 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Чем могу помочь?",
             reply_markup=MAIN_KB,
         )
+
+TRACKING_URLS = {
+    "COSCO": "https://elines.coscoshipping.com/ebusiness/cargoTracking?trackingType=CONTAINER&number={}",
+    "OOCL":  "https://www.oocl.com/eng/ourservices/eservices/cargotracking/Pages/cargotracking.aspx?{}",
+    "MSC":   "https://www.msc.com/en/track-a-shipment?agencyPath=mwi&searchInfo={}",
+    "MAERSK":"https://www.maersk.com/tracking/{}",
+    "DEFAULT":"https://www.track-trace.com/container/{}",
+}
+
+def detect_carrier(container_no: str) -> str:
+    prefix = container_no[:4].upper()
+    if prefix in ("CSGU", "COSU", "CBHU"): return "COSCO"
+    if prefix in ("OOLU", "OOCU"): return "OOCL"
+    if prefix in ("MSCU", "MEDU"): return "MSC"
+    if prefix in ("MAEU", "MSKU"): return "MAERSK"
+    return "DEFAULT"
+
+async def show_tracking(query):
+    rows = db_fetchall(
+        "SELECT invoice_no, item_name, tracking, eta, status FROM invoices WHERE tracking IS NOT NULL AND tracking != '' ORDER BY created_at DESC"
+    )
+    if not rows:
+        await query.edit_message_text(
+            "🚢 Нет доставок с трекинг-номерами.\n\nДобавь трекинг написав боту, например:\n_«трекинг для INV-001: CSGU6424856»_",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Меню", callback_data="menu")]]),
+        )
+        return
+
+    lines = ["🚢 *Активные доставки:*\n"]
+    seen = set()
+    for inv, item, tracking, eta, status in rows:
+        if tracking in seen:
+            continue
+        seen.add(tracking)
+        carrier = detect_carrier(tracking)
+        url = TRACKING_URLS[carrier].format(tracking)
+        status_emoji = {"in_transit": "🚚", "ready": "✅", "delivered": "📦", "paid": "💰", "pending": "⏳"}.get(status, "•")
+        lines.append(f"{status_emoji} *{item}* (`{inv}`)")
+        lines.append(f"  Трекинг: `{tracking}`")
+        if eta:
+            lines.append(f"  ETA: {eta}")
+        lines.append(f"  [Проверить на сайте {carrier}]({url})")
+        lines.append("")
+
+    kb = [[InlineKeyboardButton("🔄 Обновить", callback_data="tracking")],
+          [InlineKeyboardButton("« Меню", callback_data="menu")]]
+    await query.edit_message_text(
+        "\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(kb),
+        disable_web_page_preview=True,
+    )
 
 async def _process_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, image_data: bytes = None):
     user_id = update.effective_user.id
