@@ -616,14 +616,43 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
-    if doc.mime_type in ("text/plain", "text/csv") or (doc.file_name or "").endswith((".txt", ".csv")):
-        file = await context.bot.get_file(doc.file_id)
-        buf  = BytesIO()
-        await file.download_to_memory(buf)
+    caption = update.message.caption or ""
+    file = await context.bot.get_file(doc.file_id)
+    buf = BytesIO()
+    await file.download_to_memory(buf)
+    fname = (doc.file_name or "").lower()
+
+    if doc.mime_type in ("text/plain", "text/csv") or fname.endswith((".txt", ".csv")):
         text = buf.getvalue().decode("utf-8", errors="ignore")[:4000]
-        await _process_message(update, context, f"Файл {doc.file_name}:\n{text}")
+        msg = f"Файл {doc.file_name}:\n{text}"
+        if caption:
+            msg += f"\n\nКомментарий пользователя: {caption}"
+        await _process_message(update, context, msg)
+
+    elif doc.mime_type == "application/pdf" or fname.endswith(".pdf"):
+        try:
+            import pypdf
+            buf.seek(0)
+            reader = pypdf.PdfReader(buf)
+            pages_text = []
+            for page in reader.pages:
+                pages_text.append(page.extract_text() or "")
+            pdf_text = "\n".join(pages_text)[:5000]
+            msg = f"PDF инвойс «{doc.file_name}»:\n{pdf_text}"
+            if caption:
+                msg += f"\n\nКомментарий пользователя: {caption}"
+            await _process_message(update, context, msg)
+        except Exception as e:
+            logger.error(f"PDF read error: {e}")
+            await _process_message(update, context,
+                f"Пользователь прислал PDF «{doc.file_name}». Не удалось прочитать автоматически."
+                + (f" Комментарий: {caption}" if caption else ""))
     else:
-        await _process_message(update, context, f"Пользователь прислал файл «{doc.file_name}». Скажи что поддерживаются только фото, текстовые файлы и CSV.")
+        msg = f"Пользователь прислал файл «{doc.file_name}»."
+        if caption:
+            msg += f" Комментарий: {caption}"
+        msg += " Поддерживаются PDF, фото, текстовые файлы и CSV."
+        await _process_message(update, context, msg)
 
 # ---------------------------------------------------------------------------
 # Main
